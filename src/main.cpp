@@ -3,10 +3,12 @@
 #include <NeoPixelAnimator.h>
 
 #define UPDATE_INTERVAL_MS 1000
-#define PIXEL_COUNT 14
-#define PIXEL_PIN 16
+#define PIXEL_COUNT 28
+#define PIXEL_PIN 33
 
 #define SEGMENTS 7
+#define DIGITS 5
+#define SEGMENT_LEDS 4
 
 const static RgbColor Black(0, 0, 0);
 const static RgbColor White(255, 255, 255);
@@ -14,8 +16,6 @@ const static RgbColor Purple(255, 0, 255);
 const static RgbColor Red(255, 0, 0);
 
 typedef NeoGrbFeature MyPixelColorFeature;
-
-const uint8_t PixelsPerSegment[7] = {2, 2, 2, 2, 2, 2, 2};
 
 const uint8_t SevenSegDigit[10] =
 {
@@ -26,7 +26,7 @@ const uint8_t SevenSegDigit[10] =
 };
 
 
-void DisplayNumber(int num, int decimal_place, RgbColor color, NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> &_strip)
+void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> &_strip)
 {
   
   uint8_t bitmask = SevenSegDigit[num];
@@ -35,20 +35,14 @@ void DisplayNumber(int num, int decimal_place, RgbColor color, NeoPixelBus<MyPix
 
   for (uint8_t seg = 0; seg < SEGMENTS; seg++)
   {
+    start_pixel = seg * SEGMENT_LEDS + digit_offset * PIXEL_COUNT;
+    segment_color = ((bitmask>>seg) & 0x01) ? color : Black;
 
-    start_pixel = seg * PixelsPerSegment[seg] + decimal_place * PIXEL_COUNT;
-    segment_color = (bitmask & 0x01) ? color : Black;
-
-    for (uint8_t pixel = start_pixel; pixel < start_pixel + PixelsPerSegment[seg]; pixel++)
+    for (uint8_t pixel = 0; pixel < SEGMENT_LEDS; pixel++)
     {
-      _strip.SetPixelColor(pixel, segment_color);
+      _strip.SetPixelColor(pixel+start_pixel, segment_color);
     }
-    
-    bitmask >>= 1;
   }
-
-  _strip.Show();
-
 }
 
 
@@ -63,13 +57,15 @@ private:
 public:
   void TickCounter()
   {
-    DisplayNumber(_counter,0, Red, _strip);
+    for(auto i = 0; i < DIGITS; i++)
+    {
+      auto digitValue = _counter%10; // todo - calculate the single digit value
+      DisplayNumber(_counter, i, Red, _strip);
+    }
+
+    _strip.Show();
 
     _counter++;
-    if(_counter > 9)
-    {
-      _counter = 0;
-    }
 
     delay(UPDATE_INTERVAL_MS);
   }
