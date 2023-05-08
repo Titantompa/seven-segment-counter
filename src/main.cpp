@@ -16,6 +16,7 @@ const static RgbColor Purple(255, 0, 255);
 const static RgbColor Red(255, 0, 0);
 
 typedef NeoGrbFeature MyPixelColorFeature;
+typedef NeoEsp32I2s0Ws2812xMethod MyPixelColorMethod;
 
 const uint8_t SevenSegDigit[10] =
 {
@@ -26,7 +27,7 @@ const uint8_t SevenSegDigit[10] =
 };
 
 
-void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> &_strip)
+void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
 {
   
   uint8_t bitmask = SevenSegDigit[num];
@@ -45,13 +46,12 @@ void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixe
   }
 }
 
-
 #pragma region TASKS
 
 class TickCounterClass : public Task
 {
 private:
-  NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> &_strip;
+  NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
   uint32_t _counter;
 
 public:
@@ -59,8 +59,8 @@ public:
   {
     for(auto i = 0; i < DIGITS; i++)
     {
-      auto digitValue = _counter%10; // todo - calculate the single digit value
-      DisplayNumber(_counter, i, Red, _strip);
+      auto digitValue = (_counter/(int)(pow(10, i)+0.5))%10; // todo - calculate the single digit value
+      DisplayNumber(digitValue, i, Red, _strip);
     }
 
     _strip.Show();
@@ -70,7 +70,7 @@ public:
     delay(UPDATE_INTERVAL_MS);
   }
 
-  TickCounterClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> &strip)
+  TickCounterClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip)
       : Task(
             TASK_IMMEDIATE,
             TASK_FOREVER,
@@ -88,7 +88,7 @@ public:
 #pragma region GLOBALS
 
 /* @brief The neopixel strip */
-NeoPixelBus<MyPixelColorFeature, NeoWs2812Method> PixelStrip(PIXEL_COUNT, PIXEL_PIN);
+NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT*DIGITS, PIXEL_PIN);
 
 /* @brief The task scheduler instance */
 Scheduler TaskScheduler;
