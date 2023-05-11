@@ -1,7 +1,20 @@
 #include <TaskScheduler.h>
 #include <NeoPixelBus.h>
 #include <NeoPixelAnimator.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
+#pragma region WiFi Settings
+
+const char * hostname = "EngCounter"; 
+const char * soft_ap_ssid = "EngCounter_"; 
+const char * soft_ap_pwd = "2d18cc21-de34-4bcd-8c9d-9d6dbc27d358"; 
+const char * wifi_ssid = "Goals-Guest"; 
+const char * wifi_pwd = "Gooooal!"; 
+
+#pragma endregion
+
+#define REFRESH_INTERVAL_MS 60000
 #define UPDATE_INTERVAL_MS 1000
 #define PIXEL_COUNT 28
 #define PIXEL_PIN 33
@@ -26,6 +39,8 @@ const uint8_t SevenSegDigit[10] =
   0x3E, 0x7E, 0x13, 0x7F, 0x3F
 };
 
+uint32_t CurrentValue;
+uint32_t Timestamp;
 
 void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
 {
@@ -48,11 +63,94 @@ void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixe
 
 #pragma region TASKS
 
+class PollingTask : public Task
+{
+  private:
+  uint32_t& _value;
+  uint32_t& _timestamp;
+
+  void PollValue()
+  {
+    _timestamp = millis();
+
+    HTTPClient httpClient;
+    httpClient.setTimeout(30000);
+    httpClient.setReuse(false);
+    
+    if(!httpClient.begin("https://tomas-hzrqbqznnq-ez.a.run.app/"))
+    {
+      Serial.println("Failed to begin HTTPClient");
+      return;
+    }
+
+    int code = httpClient.GET();
+
+    if(code != HTTP_CODE_OK)
+    {
+      Serial.println("Failed on response from server: "+String(code));
+      return;
+    }
+
+    auto body = httpClient.getString();
+
+    Serial.println("Response from server: "+body);
+
+    int start = body.indexOf("counter");
+    if(start== -1)
+    {
+      Serial.println("Failed, since body doesn't seem to contain 'counter'");
+      return;
+    }
+    start += 8;
+
+    while( body[start] == ' ' || body[start]==':' && start < body.length())
+      start++;
+
+    if(start == body.length())
+    {
+      Serial.println("Failed, unable to find start of numeric value");
+      return;
+    }
+
+    auto end = start;
+    while(isdigit(body[end]) && end < body.length())
+      end++;
+
+    if(end == body.length())
+    {
+      Serial.println("Failed, reached end of payload looking for end of numeric value");
+      return;
+    }
+
+    auto numstr = body.substring(start,end);
+
+    Serial.println("Found counter value: "+numstr);
+
+    _value = atoi(numstr.c_str());
+
+    httpClient.end();
+
+    return;
+  }
+
+  public:
+  PollingTask(Scheduler &scheduler, uint32_t& value, uint32_t& timestamp)
+      : Task(REFRESH_INTERVAL_MS,
+            TASK_FOREVER,
+            [this]
+            { PollValue(); },
+            &scheduler, true),
+        _value(value),
+        _timestamp(timestamp)
+  {
+  }
+};
+
 class TickCounterClass : public Task
 {
 private:
   NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
-  uint32_t _counter;
+  uint32_t& _counter;
 
 public:
   void TickCounter()
@@ -65,12 +163,10 @@ public:
 
     _strip.Show();
 
-    _counter++;
-
     delay(UPDATE_INTERVAL_MS);
   }
 
-  TickCounterClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip)
+  TickCounterClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip, uint32_t& counter)
       : Task(
             TASK_IMMEDIATE,
             TASK_FOREVER,
@@ -78,7 +174,7 @@ public:
             { TickCounter(); },
             &scheduler, true),
         _strip(strip),
-        _counter(0)
+        _counter(counter)
   {
   }
 };
@@ -94,14 +190,54 @@ NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT*DIGI
 Scheduler TaskScheduler;
 
 /* @brief The CounterTask instance controlling the led strip */
-TickCounterClass CounterTask(TaskScheduler, PixelStrip);
+TickCounterClass CounterTask(TaskScheduler, PixelStrip, CurrentValue);
+
+PollingTask RefreshTask(TaskScheduler, CurrentValue, Timestamp);
 
 #pragma endregion
 
 #pragma region SETUP &LOOP
 
+
+void initWifi()
+{
+  auto apSsid = String(soft_ap_ssid)+String(rand(), 0x16);
+
+  Serial.println("Soft AP SSID: "+apSsid);
+
+  //WiFi.mode(WIFI_STA);
+   WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(apSsid, soft_ap_pwd);
+  WiFi.begin(wifi_ssid, wifi_pwd);
+
+  Serial.print("Soft AP IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  while(WiFi.status() != WL_CONNECTED)
+  {
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  digitalWrite(LED_BUILTIN, false);
+
+  Serial.print("Wifi Client IP: ");
+  Serial.println(WiFi.localIP());
+}
+
 void setup()
 {
+  Serial.begin(9600);
+
+  while(!Serial)
+    delay;
+
+  initWifi();
+
   PixelStrip.Begin();
   PixelStrip.ClearTo(Black);
   PixelStrip.Show();
