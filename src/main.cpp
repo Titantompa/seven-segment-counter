@@ -13,8 +13,6 @@ const char * soft_ap_ssid = QuoteMacro(SOFT_AP_SSID);
 const char * soft_ap_pwd = QuoteMacro(SOFT_AP_PWD); 
 const char * wifi_ssid = QuoteMacro(WIFI_SSID); 
 const char * wifi_pwd = QuoteMacro(WIFI_PWD);
-// const char * wifi_ssid = "Goals-Guest"; 
-// const char * wifi_pwd = "Gooooal!"; 
 
 IPAddress soft_ap_address(172, 17, 49, 0);
 IPAddress soft_ap_gateway(172, 17, 49, 1);
