@@ -6,19 +6,17 @@
 
 #pragma region WiFi Settings
 
-#define QuoteMacro(x) "#x"
+#define Q(x) (#x)
+#define QuoteMacro(x) (Q(x))
 
 const char * hostname = "GoalsCounter"; 
 const char * soft_ap_ssid = QuoteMacro(SOFT_AP_SSID); 
 const char * soft_ap_pwd = QuoteMacro(SOFT_AP_PWD); 
 const char * wifi_ssid = QuoteMacro(WIFI_SSID); 
 const char * wifi_pwd = QuoteMacro(WIFI_PWD);
-// const char * wifi_ssid = "Goals-Guest"; 
-// const char * wifi_pwd = "Gooooal!"; 
 
-IPAddress soft_ap_address(172, 17, 49, 0);
-IPAddress soft_ap_gateway(172, 17, 49, 1);
-IPAddress soft_ap_mask(255, 255, 255, 240);
+IPAddress soft_ap_address(172, 17, 49, 1);
+IPAddress soft_ap_mask(255, 255, 255, 128);
 
 #pragma endregion
 
@@ -215,25 +213,28 @@ void initWifi()
 
   // WiFi.mode(WIFI_STA);
   WiFi.mode(WIFI_AP_STA);
-  if (!WiFi.softAPConfig(soft_ap_address, soft_ap_gateway, soft_ap_mask))
+
+  if (!WiFi.softAPConfig(soft_ap_address, INADDR_NONE, soft_ap_mask))
   {
     Serial.println("WiFi.softAPConfig() failed!");
   }
+
   if (!WiFi.softAP(apSsid.c_str(), soft_ap_pwd))
   {
     Serial.println("WiFi.softAP() failed!");
   }
-  WiFi.begin(wifi_ssid, wifi_pwd);
 
   Serial.print("Soft AP IP: ");
   Serial.println(WiFi.softAPIP());
+
+  WiFi.begin(wifi_ssid, wifi_pwd);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
   while (WiFi.status() != WL_CONNECTED)
   {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-    delay(500);
+    delay(250);
     Serial.print(".");
   }
   Serial.println();
@@ -246,10 +247,12 @@ void initWifi()
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
-  while(!Serial)
-    delay;
+  while(!Serial && millis() < 10000)
+  {
+    delay(100);
+  }
 
   initWifi();
 
@@ -265,6 +268,23 @@ void setup()
 void loop()
 {
   TaskScheduler.execute();
+
+  // Handle WiFi reconnects
+  if(WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.reconnect();
+      
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      delay(250);
+      Serial.print(".");
+    }
+
+    Serial.print("Wifi Client IP: ");
+    Serial.println(WiFi.localIP());
+  }
+
 }
 
 #pragma endregion
