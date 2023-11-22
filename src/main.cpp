@@ -31,21 +31,87 @@ const static RgbColor Red(255, 0, 0);
 typedef NeoGrbFeature MyPixelColorFeature;
 typedef NeoEsp32I2s0Ws2812xMethod MyPixelColorMethod;
 
-const uint8_t SevenSegDigit[10] =
+// This is the bit order of the segments:
+//
+//   + 1 +
+//   2   0
+//   + 3 +
+//   6   4
+//   + 5 +
+
+const uint8_t SevenSegDigit[64] =
 {
 /*  0     1     2     3     4   */
   0x77, 0x11, 0x6B, 0x3B, 0x1D, 
 /*  5     6     7     8     9   */
-  0x3E, 0x7E, 0x13, 0x7F, 0x3F
+  0x3E, 0x7E, 0x13, 0x7F, 0x3F,
+/*  A     B     C     D     E   */
+  0x5f, 0x7f, 0x66, 0x77,  0x63,
+/*  F     G     H     I     J  */
+  0x4e, 0x76, 0x5d, 0x11, 0x73,
+/*  K     L     M     N     O */
+  0x5d, 0x64, 0x57, 0x57, 0x77,
+/*  P     Q     R     S     T */
+  0x4f, 0x77, 0x5f, 0x3e, 0x46,
+/*  U     V     W     X     Y */
+  0x75, 0x75, 0x75, 0x5d, 0x1d,
+/*  Z */
+0x6b,
+/*  a     b     c     d     e   */
+  0x7b, 0x7c, 0x68, 0x79, 0x6f,
+/*  f     g     h     i     j   */
+  0x4e, 0x3f, 0x5c, 0x10, 0x71,
+/*  k     l     m     n     o   */
+  0x5e, 0x11, 0x58, 0x58, 0x77,
+/*  p     q     r     s     t   */
+  0x4f, 0x1f, 0x48, 0x3e, 0x6c,
+/*  u     v     w     x     y   */
+  0x70, 0x70, 0x70, 0x5d, 0x3d,
+/*  z */
+  0x6b, 
+/*  -    ' ' */
+  0x08, 0x00
 };
 
 uint32_t CurrentValue;
 uint32_t Timestamp;
 
-void DisplayNumber(int num, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
+void DisplayAlphaNumberic(char alnum, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
 {
-  
-  uint8_t bitmask = SevenSegDigit[num];
+  int index;
+
+  if (alnum >= '0' && alnum <= '9')
+  {
+    index = alnum - '0';
+  }
+  else if (alnum >= 'A' && alnum <= 'Z')
+  {
+    // Only have lower case for the moment
+    index = (alnum - 'A') + 10;
+  }
+  else if (alnum >= 'a' && alnum <= 'z')
+  {
+    index = (alnum - 'a') + 36;
+  }
+  else if(alnum == '-')
+  {
+    index = 62;
+  }
+  else if(alnum == ' ')
+  {
+    index = 63;
+  }
+  else
+  {
+    return;
+  }
+
+  if(index < 0 ||index > 63)
+  {
+    index = 63;
+  }
+
+  uint8_t bitmask = SevenSegDigit[index];
   uint8_t start_pixel = 0;
   RgbColor segment_color;
 
@@ -146,6 +212,37 @@ class PollingTask : public Task
   }
 };
 
+class TempDummyClass : public Task
+{
+private:
+  NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
+
+public:
+  void TickCounter()
+  {
+    DisplayAlphaNumberic('b', 4, Red, _strip);
+    DisplayAlphaNumberic('8', 3, Red, _strip);
+    DisplayAlphaNumberic('b', 2, Red, _strip);
+    DisplayAlphaNumberic('b', 1, Red, _strip);
+    DisplayAlphaNumberic('1', 0, Red, _strip);
+
+    _strip.Show();
+
+    delay(UPDATE_INTERVAL_MS);
+  }
+
+  TempDummyClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip)
+      : Task(
+            TASK_IMMEDIATE,
+            TASK_FOREVER,
+            [this]
+            { TickCounter(); },
+            &scheduler, true),
+        _strip(strip)
+  {
+  }
+};
+
 class TickCounterClass : public Task
 {
 private:
@@ -158,7 +255,7 @@ public:
     for(auto i = 0; i < DIGITS; i++)
     {
       auto digitValue = (_counter/(int)(pow(10, i)+0.5))%10; // todo - calculate the single digit value
-      DisplayNumber(digitValue, i, Red, _strip);
+      DisplayAlphaNumberic(digitValue, i, Red, _strip);
     }
 
     _strip.Show();
@@ -191,6 +288,8 @@ Scheduler TaskScheduler;
 
 /* @brief The CounterTask instance controlling the led strip */
 TickCounterClass CounterTask(TaskScheduler, PixelStrip, CurrentValue);
+
+TempDummyClass DummyTask(TaskScheduler, PixelStrip);
 
 PollingTask RefreshTask(TaskScheduler, CurrentValue, Timestamp);
 
@@ -233,8 +332,8 @@ void setup()
 {
   Serial.begin(9600);
 
-  while(!Serial)
-    delay;
+  // while(!Serial)
+  //   delay;
 
   initWifi();
 
@@ -244,7 +343,8 @@ void setup()
 
   TaskScheduler.enable();
 
-  CounterTask.enable();
+//   CounterTask.enable();
+  DummyTask.enable();
 }
 
 void loop()
