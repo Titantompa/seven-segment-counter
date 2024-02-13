@@ -47,3 +47,6 @@
 
 #Platform IO
 .pio
+
+# Project Secret Configuration
+secrets.ini

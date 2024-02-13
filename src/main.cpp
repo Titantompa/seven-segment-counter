@@ -7,11 +7,17 @@
 
 #pragma region WiFi Settings
 
-const char *hostname = "EngCounter";
-const char *soft_ap_ssid = "EngCounter_";
-const char *soft_ap_pwd = "2d18cc21-de34-4bcd-8c9d-9d6dbc27d358";
-const char *wifi_ssid = "Goals-Guest";
-const char *wifi_pwd = "Gooooal!";
+#define Q(x) (#x)
+#define QuoteMacro(x) (Q(x))
+
+const char * hostname = "GoalsCounter"; 
+const char * soft_ap_ssid = QuoteMacro(SOFT_AP_SSID); 
+const char * soft_ap_pwd = QuoteMacro(SOFT_AP_PWD); 
+const char * wifi_ssid = QuoteMacro(WIFI_SSID); 
+const char * wifi_pwd = QuoteMacro(WIFI_PWD);
+
+IPAddress soft_ap_address(172, 17, 49, 1);
+IPAddress soft_ap_mask(255, 255, 255, 128);
 
 #pragma endregion
 
@@ -358,7 +364,7 @@ public:
 #pragma region GLOBALS
 
 /* @brief The neopixel strip */
-NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT *DIGITS, PIXEL_PIN);
+NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT*DIGITS, PIXEL_PIN);
 
 /* @brief The task scheduler instance */
 Scheduler TaskScheduler;
@@ -382,11 +388,21 @@ void initWifi()
 
   // WiFi.mode(WIFI_STA);
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(apSsid, soft_ap_pwd);
-  WiFi.begin(wifi_ssid, wifi_pwd);
+
+  if (!WiFi.softAPConfig(soft_ap_address, INADDR_NONE, soft_ap_mask))
+  {
+    Serial.println("WiFi.softAPConfig() failed!");
+  }
+
+  if (!WiFi.softAP(apSsid.c_str(), soft_ap_pwd))
+  {
+    Serial.println("WiFi.softAP() failed!");
+  }
 
   Serial.print("Soft AP IP: ");
   Serial.println(WiFi.softAPIP());
+
+  WiFi.begin(wifi_ssid, wifi_pwd);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -406,11 +422,13 @@ void initWifi()
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // NOTE: THIS MUST BE COMMENTED OUT WHEN NOT CONNECTED TO A COMPUTER!
-  // while(!Serial)
-  //    delay;
+  // while(!Serial && millis() < 10000)
+  //{
+  //  delay(100);
+  //}
 
   initWifi();
 
@@ -430,6 +448,23 @@ void setup()
 void loop()
 {
   TaskScheduler.execute();
+
+  // Handle WiFi reconnects
+  if(WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.reconnect();
+      
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      delay(250);
+      Serial.print(".");
+    }
+
+    Serial.print("Wifi Client IP: ");
+    Serial.println(WiFi.localIP());
+  }
+
 }
 
 #pragma endregion
