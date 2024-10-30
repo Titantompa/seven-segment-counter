@@ -21,13 +21,13 @@ IPAddress soft_ap_mask(255, 255, 255, 128);
 
 #pragma endregion
 
-#define REFRESH_INTERVAL_MS 60000
+#define REFRESH_INTERVAL_MS 60000 // 10 minutes polling interval
 #define UPDATE_INTERVAL_MS 1000
 #define PIXEL_COUNT 28
 #define PIXEL_PIN 33
 
 #define SEGMENTS 7
-#define DIGITS 5
+#define DIGITS 6
 #define SEGMENT_LEDS 4
 
 const static RgbColor Black(0, 0, 0);
@@ -35,6 +35,7 @@ const static RgbColor White(255, 255, 255);
 const static RgbColor Purple(255, 0, 255);
 const static RgbColor Red(255, 0, 0);
 const static RgbColor Green(0, 255, 0);
+const static RgbColor Yellow(255, 255, 0);
 const static RgbColor Blue(0, 0, 255);
 const static RgbColor GoalsOrange(255, 30, 0);
 
@@ -82,10 +83,12 @@ const uint8_t SevenSegDigit[64] =
         /*  -    ' ' */
         0x08, 0x00};
 
-uint32_t GoMatches;
-uint32_t FfaMatches;
+uint32_t DailyUsersToday;
+uint32_t OneVOneMatches;
+uint32_t FiveVFiveMatches;
 uint32_t ArenaGames;
 uint32_t GeneratedCharacters;
+uint32_t TotalAccounts;
 uint32_t Timestamp;
 
 void DisplayAlphaNumberic(char alnum, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
@@ -144,10 +147,12 @@ void DisplayAlphaNumberic(char alnum, int digit_offset, RgbColor color, NeoPixel
 class PollingTask : public Task
 {
 private:
-  uint32_t &_goMatches;
-  uint32_t &_ffaMatches;
+  uint32_t &_dailyUsersToday;
+  uint32_t &_oneVOneMatches;
+  uint32_t &_fiveVFiveMatches;
   uint32_t &_arenaGames;
   uint32_t &_generatedCharacters;
+  uint32_t &_totalAccounts;
   uint32_t &_timestamp;
 
   void PollValue()
@@ -186,43 +191,47 @@ private:
       Serial.println(error.f_str());
     }
 
-    _goMatches = _ffaMatches = _arenaGames = _generatedCharacters = 0;
+    // {"characters":{"characters":215201,"arena":8906,"five_vs_five":126,"one_vs_one":10355,"daily_active_users_game_today":50,"accounts_created":5690}}
 
-    auto goJson = json["matches_go"];
-    if (goJson != nullptr)
+    auto subJson = json["characters"];
+
+    if(subJson == nullptr)
     {
-      long goCount = goJson["counter"];
-      Serial.printf("GO games = %d", goCount);
-      Serial.println();
-      _goMatches = goCount;
+      Serial.println("Failed to find object \"characters\"");
+      return;
     }
 
-    auto ffaJson = json["matches_ffa"];
-    if (ffaJson != nullptr)
-    {
-      long ffaCount = ffaJson["counter"];
-      Serial.printf("FFA games = %d", ffaCount);
-      Serial.println();
-      _ffaMatches = ffaCount;
-    }
+    _oneVOneMatches = _oneVOneMatches = _fiveVFiveMatches = _arenaGames = _generatedCharacters = 0;
 
-    auto arenaJson = json["matches_arena"];
-    if (arenaJson != nullptr)
-    {
-      long arenaCount = arenaJson["counter"];
-      Serial.printf("Arena games = %d", arenaCount);
-      Serial.println();
-      _arenaGames = arenaCount;
-    }
+    long dailyUsersCount = subJson["daily_active_users_game_today"];
+    Serial.printf("Daily active users today = %d", dailyUsersCount);
+    Serial.println();
+    _dailyUsersToday = dailyUsersCount;
 
-    auto characterJson = json["characters"];
-    if (characterJson != nullptr)
-    {
-      long charcterCount = characterJson["counter"];
-      Serial.printf("Generated characters = %d", charcterCount);
-      Serial.println();
-      _generatedCharacters = charcterCount;
-    }
+    long totalAccountsCount = subJson["accounts_created"];
+    Serial.printf("Total accounts = %d", totalAccountsCount);
+    Serial.println();
+    _totalAccounts = totalAccountsCount;
+
+    long oneVOneCount = subJson["one_vs_one"];
+    Serial.printf("1v1 games = %d", oneVOneCount);
+    Serial.println();
+    _oneVOneMatches = oneVOneCount;
+
+    long fiveVFiveCount = subJson["five_vs_five"];
+    Serial.printf("5v5 games = %d", fiveVFiveCount);
+    Serial.println();
+    _fiveVFiveMatches = fiveVFiveCount;
+
+    long arenaCount = subJson["arena"];
+    Serial.printf("Arena games = %d", arenaCount);
+    Serial.println();
+    _arenaGames = arenaCount;
+
+    long charcterCount = subJson["characters"];
+    Serial.printf("Generated characters = %d", charcterCount);
+    Serial.println();
+    _generatedCharacters = charcterCount;
 
     httpClient.end();
 
@@ -230,61 +239,34 @@ private:
   }
 
 public:
-  PollingTask(Scheduler &scheduler, uint32_t &goValue, uint32_t &ffaValue, uint32_t &arenaValue, uint32_t &charactersValue, uint32_t &timestamp)
+  PollingTask(Scheduler &scheduler, uint32_t &dailyUsersValue, uint32_t &oneVOneValue, uint32_t &fiveVFiveValue, uint32_t &arenaValue, uint32_t &charactersValue, uint32_t &totalAccounts, uint32_t &timestamp)
       : Task(
             REFRESH_INTERVAL_MS,
             TASK_FOREVER,
             [this]
             { PollValue(); },
             &scheduler, false),
-        _goMatches(goValue),
-        _ffaMatches(ffaValue),
+        _dailyUsersToday(dailyUsersValue),
+        _oneVOneMatches(oneVOneValue),
+        _fiveVFiveMatches(fiveVFiveValue),
         _arenaGames(arenaValue),
         _generatedCharacters(charactersValue),
+        _totalAccounts(totalAccounts),
         _timestamp(timestamp)
   {
   }
 };
 
-// class TempDummyClass : public Task
-// {
-// private:
-//   NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
-
-// public:
-//   void TickCounter()
-//   {
-//     DisplayAlphaNumberic('b', 4, Red, _strip);
-//     DisplayAlphaNumberic('8', 3, Red, _strip);
-//     DisplayAlphaNumberic('b', 2, Red, _strip);
-//     DisplayAlphaNumberic('b', 1, Red, _strip);
-//     DisplayAlphaNumberic('2', 0, Red, _strip);
-
-//     _strip.Show();
-
-//     delay(UPDATE_INTERVAL_MS);
-//   }
-
-//   TempDummyClass(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip)
-//       : Task(
-//             TASK_IMMEDIATE,
-//             TASK_FOREVER,
-//             [this]
-//             { TickCounter(); },
-//             &scheduler, true),
-//         _strip(strip)
-//   {
-//   }
-// };
-
 class CycleDisplayTask : public Task
 {
 private:
   NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
-  uint32_t &_goMatches;
-  uint32_t &_ffaMatches;
+  uint32_t &_dailyUsersToday;
+  uint32_t &_oneVOneMatches;
+  uint32_t &_fiveVFiveMatches;
   uint32_t &_arenaGames;
   uint32_t &_generatedCharacters;
+  uint32_t &_totalAccounts;
 
 public:
   void DisplayValue()
@@ -294,15 +276,15 @@ public:
     // This looks a little daft since the result is the same as ( seconds % 3 ) but
     // that would make it flip every second, we want whatever is displayed to remain
     // for five seconds before switching to the next.
-    int value = (seconds % 15) / 5;
+    int value = (seconds % 25) / 5;
 
     if (value < 0)
     {
       value = 0;
     }
-    else if (value > 2)
+    else if (value > 4)
     {
-      value = 2;
+      value = 4;
     }
 
     _strip.ClearTo(Black);
@@ -312,17 +294,19 @@ public:
     case 0:
       for (auto i = 0; i < DIGITS; i++)
       {
-        auto digitValue = '0' + ((_goMatches + _ffaMatches + _arenaGames) / (int)(pow(10, i) + 0.5)) % 10;
+        auto digitValue = '0' + ((_oneVOneMatches + _fiveVFiveMatches + _arenaGames) / (int)(pow(10, i) + 0.5)) % 10;
         DisplayAlphaNumberic(digitValue, i, Red, _strip);
       }
-      Serial.println("Played Games");
+      Serial.printf("Played games = %d", _oneVOneMatches + _fiveVFiveMatches + _arenaGames);
+      Serial.println();
       break;
     case 1:
-      DisplayAlphaNumberic('b', 4, GoalsOrange, _strip);
-      DisplayAlphaNumberic('9', 3, GoalsOrange, _strip);
-      DisplayAlphaNumberic('b', 2, GoalsOrange, _strip);
-      DisplayAlphaNumberic('b', 1, GoalsOrange, _strip);
-      DisplayAlphaNumberic('1', 0, GoalsOrange, _strip);
+      DisplayAlphaNumberic('b', 5, GoalsOrange, _strip);
+      DisplayAlphaNumberic('t', 4, GoalsOrange, _strip);
+      DisplayAlphaNumberic('1', 3, GoalsOrange, _strip);
+      DisplayAlphaNumberic('0', 2, GoalsOrange, _strip);
+      DisplayAlphaNumberic('-', 1, GoalsOrange, _strip);
+      DisplayAlphaNumberic('5', 0, GoalsOrange, _strip);
       Serial.println("Beat Display");
       break;
     case 2:
@@ -331,7 +315,26 @@ public:
         auto digitValue = '0' + (_generatedCharacters / (int)(pow(10, i) + 0.5)) % 10;
         DisplayAlphaNumberic(digitValue, i, Purple, _strip);
       }
-      Serial.println("Generated Charaters");
+      Serial.printf("Generated characters = %d", _generatedCharacters);
+      Serial.println();
+      break;
+    case 3:
+      for (auto i = 0; i < DIGITS; i++)
+      {
+        auto digitValue = '0' + (_dailyUsersToday / (int)(pow(10, i) + 0.5)) % 10;
+        DisplayAlphaNumberic(digitValue, i, Green, _strip);
+      }
+      Serial.printf("Users today = %d", _dailyUsersToday);
+      Serial.println();
+      break;
+    case 4:
+      for (auto i = 0; i < DIGITS; i++)
+      {
+        auto digitValue = '0' + (_totalAccounts / (int)(pow(10, i) + 0.5)) % 10;
+        DisplayAlphaNumberic(digitValue, i, Yellow, _strip);
+      }
+      Serial.printf("Total accounts = %d", _totalAccounts);
+      Serial.println();
       break;
     default:
       DisplayAlphaNumberic('-', 0, Blue, _strip);
@@ -343,7 +346,7 @@ public:
     delay(UPDATE_INTERVAL_MS);
   }
 
-  CycleDisplayTask(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip, uint32_t &goValue, uint32_t &ffaValue, uint32_t &arenaValue, uint32_t &charactersValue)
+  CycleDisplayTask(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip, uint32_t &dailyUsersValue, uint32_t &goValue, uint32_t &ffaValue, uint32_t &arenaValue, uint32_t &charactersValue, uint32_t &totalAccountsValue)
       : Task(
             TASK_IMMEDIATE,
             TASK_FOREVER,
@@ -351,10 +354,12 @@ public:
             { DisplayValue(); },
             &scheduler, false),
         _strip(strip),
-        _goMatches(goValue),
-        _ffaMatches(ffaValue),
+        _dailyUsersToday(dailyUsersValue),
+        _oneVOneMatches(goValue),
+        _fiveVFiveMatches(ffaValue),
         _arenaGames(arenaValue),
-        _generatedCharacters(charactersValue)
+        _generatedCharacters(charactersValue),
+        _totalAccounts(totalAccountsValue)
   {
   }
 };
@@ -370,11 +375,11 @@ NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT*DIGI
 Scheduler TaskScheduler;
 
 /* @brief The CounterTask instance controlling the led strip */
-CycleDisplayTask DisplayTask(TaskScheduler, PixelStrip, GoMatches, FfaMatches, ArenaGames, GeneratedCharacters);
+CycleDisplayTask DisplayTask(TaskScheduler, PixelStrip, DailyUsersToday, OneVOneMatches, FiveVFiveMatches, ArenaGames, GeneratedCharacters, TotalAccounts);
 
 // TempDummyClass DummyTask(TaskScheduler, PixelStrip);
 
-PollingTask RefreshTask(TaskScheduler, GoMatches, FfaMatches, ArenaGames, GeneratedCharacters, Timestamp);
+PollingTask RefreshTask(TaskScheduler, DailyUsersToday, OneVOneMatches, FiveVFiveMatches, ArenaGames, GeneratedCharacters, TotalAccounts, Timestamp);
 
 #pragma endregion
 
@@ -440,9 +445,6 @@ void setup()
 
   RefreshTask.enable();
   DisplayTask.enable();
-
-  // DisplayTask.enable();
-  // DummyTask.enable();
 }
 
 void loop()
@@ -464,7 +466,6 @@ void loop()
     Serial.print("Wifi Client IP: ");
     Serial.println(WiFi.localIP());
   }
-
 }
 
 #pragma endregion
