@@ -21,7 +21,7 @@ IPAddress soft_ap_mask(255, 255, 255, 128);
 
 #pragma endregion
 
-#define REFRESH_INTERVAL_MS 60000 // 10 minutes polling interval
+#define REFRESH_INTERVAL_MS 600000 // Every ten minutes
 #define UPDATE_INTERVAL_MS 1000
 #define PIXEL_COUNT 28
 #define PIXEL_PIN 33
@@ -85,10 +85,9 @@ const uint8_t SevenSegDigit[64] =
 
 uint32_t DailyUsersToday;
 uint32_t OneVOneMatches;
-uint32_t FiveVFiveMatches;
-uint32_t ArenaGames;
+uint32_t SoloGames;
 uint32_t GeneratedCharacters;
-uint32_t TotalAccounts;
+uint32_t OnlineUsers;
 uint32_t Timestamp;
 
 void DisplayAlphaNumberic(char alnum, int digit_offset, RgbColor color, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip)
@@ -149,10 +148,9 @@ class PollingTask : public Task
 private:
   uint32_t &_dailyUsersToday;
   uint32_t &_oneVOneMatches;
-  uint32_t &_fiveVFiveMatches;
-  uint32_t &_arenaGames;
+  uint32_t &_soloGames;
   uint32_t &_generatedCharacters;
-  uint32_t &_totalAccounts;
+  uint32_t &_onlineUsers;
   uint32_t &_timestamp;
 
   void PollValue()
@@ -163,7 +161,7 @@ private:
     httpClient.setTimeout(30000);
     httpClient.setReuse(false);
 
-    if (!httpClient.begin("https://tomas-hzrqbqznnq-ez.a.run.app/"))
+    if (!httpClient.begin("https://europe-west1-prj-prod-public-g000.cloudfunctions.net/iot-stats"))
     {
       Serial.println("Failed to begin HTTPClient");
       return;
@@ -191,47 +189,90 @@ private:
       Serial.println(error.f_str());
     }
 
-    // {"characters":{"characters":215201,"arena":8906,"five_vs_five":126,"one_vs_one":10355,"daily_active_users_game_today":50,"accounts_created":5690}}
+    _oneVOneMatches = _soloGames = _generatedCharacters = _onlineUsers = 0;
 
-    auto subJson = json["characters"];
+    // {
+    //    "cache_age":0,
+    //    "now":{
+    //       "online_users":19
+    //    },
+    //    "timestamp":"2025-05-14T13:53:42.270334+00:00",
+    //    "today":{
+    //       "characters_generated":3838,
+    //       "daily_active_users_app":133,
+    //       "daily_active_users_game":234,
+    //       "first_opens_game":32,
+    //       "match_completed_1v1":156,
+    //       "match_completed_solo":126
+    //    },
+    //    "total":{
+    //       "characters_generated":1332072,
+    //       "match_completed_1v1":84931,
+    //       "match_completed_solo":79828
+    //    }
+    // }
 
-    if(subJson == nullptr)
+    auto nowJson = json["now"];
+    if(nowJson == nullptr)
     {
-      Serial.println("Failed to find object \"characters\"");
-      return;
+      Serial.println("Failed to find \"now\" object");
     }
 
-    _oneVOneMatches = _oneVOneMatches = _fiveVFiveMatches = _arenaGames = _generatedCharacters = 0;
+    auto onlineUsersJson = nowJson["online_users"];
+    if(onlineUsersJson == nullptr)
+    {
+      Serial.println("Failed to find \"now.online_users\" object");
+    }
+    _onlineUsers = onlineUsersJson;
+    Serial.printf("online_users = %d", _onlineUsers);
 
-    long dailyUsersCount = subJson["daily_active_users_game_today"];
-    Serial.printf("Daily active users today = %d", dailyUsersCount);
-    Serial.println();
-    _dailyUsersToday = dailyUsersCount;
+    // -------
 
-    long totalAccountsCount = subJson["accounts_created"];
-    Serial.printf("Total accounts = %d", totalAccountsCount);
-    Serial.println();
-    _totalAccounts = totalAccountsCount;
+    auto todayJson = json["today"];
+    if(todayJson == nullptr)
+    {
+      Serial.println("Failed to find \"today\" object");
+    }
 
-    long oneVOneCount = subJson["one_vs_one"];
-    Serial.printf("1v1 games = %d", oneVOneCount);
-    Serial.println();
-    _oneVOneMatches = oneVOneCount;
+    auto dailyActiveUsersJson = todayJson["daily_active_users_game"];
+    if(dailyActiveUsersJson == nullptr)
+    {
+      Serial.println("Failed to find \"today.daily_active_users_game\" object");
+    }
+    _dailyUsersToday = dailyActiveUsersJson;
+    Serial.printf("daily_active_users_game = %d", _dailyUsersToday);
 
-    long fiveVFiveCount = subJson["five_vs_five"];
-    Serial.printf("5v5 games = %d", fiveVFiveCount);
-    Serial.println();
-    _fiveVFiveMatches = fiveVFiveCount;
+    // ------
 
-    long arenaCount = subJson["arena"];
-    Serial.printf("Arena games = %d", arenaCount);
-    Serial.println();
-    _arenaGames = arenaCount;
+    auto totalJson = json["total"];
+    if(totalJson == nullptr)
+    {
+      Serial.println("Failed to find \"total\" object");
+    }
 
-    long charcterCount = subJson["characters"];
-    Serial.printf("Generated characters = %d", charcterCount);
-    Serial.println();
-    _generatedCharacters = charcterCount;
+    auto charactersGeneratedJson = totalJson["characters_generated"];
+    if(charactersGeneratedJson == nullptr)
+    {
+      Serial.println("Failed to find \"total.characters_generated\" object");
+    }
+    _generatedCharacters = charactersGeneratedJson;
+    Serial.printf("characters_generated = %d", _generatedCharacters);
+
+    auto oneVOneCompletedJson = totalJson["match_completed_1v1"];
+    if(oneVOneCompletedJson == nullptr)
+    {
+      Serial.println("Failed to find \"total.match_completed_1v1\" object");
+    }
+    _oneVOneMatches = oneVOneCompletedJson;
+    Serial.printf("match_completed_1v1 = %d", _oneVOneMatches);
+
+    auto soloCompletedJson = totalJson["match_completed_solo"];
+    if(soloCompletedJson == nullptr)
+    {
+      Serial.println("Failed to find \"total.match_completed_solo\" object");
+    }
+    _soloGames = soloCompletedJson;
+    Serial.printf("match_completed_solo = %d", _soloGames);
 
     httpClient.end();
 
@@ -239,7 +280,7 @@ private:
   }
 
 public:
-  PollingTask(Scheduler &scheduler, uint32_t &dailyUsersValue, uint32_t &oneVOneValue, uint32_t &fiveVFiveValue, uint32_t &arenaValue, uint32_t &charactersValue, uint32_t &totalAccounts, uint32_t &timestamp)
+  PollingTask(Scheduler &scheduler, uint32_t &dailyUsersValue, uint32_t &oneVOneValue, uint32_t &soloValue, uint32_t &charactersValue, uint32_t &onlineValue, uint32_t &timestamp)
       : Task(
             REFRESH_INTERVAL_MS,
             TASK_FOREVER,
@@ -248,11 +289,10 @@ public:
             &scheduler, false),
         _dailyUsersToday(dailyUsersValue),
         _oneVOneMatches(oneVOneValue),
-        _fiveVFiveMatches(fiveVFiveValue),
-        _arenaGames(arenaValue),
+        _soloGames(soloValue),
         _generatedCharacters(charactersValue),
-        _totalAccounts(totalAccounts),
-        _timestamp(timestamp)
+        _timestamp(timestamp),
+        _onlineUsers(onlineValue)
   {
   }
 };
@@ -263,62 +303,61 @@ private:
   NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &_strip;
   uint32_t &_dailyUsersToday;
   uint32_t &_oneVOneMatches;
-  uint32_t &_fiveVFiveMatches;
-  uint32_t &_arenaGames;
+  uint32_t &_soloGames;
+  uint32_t &_onlineUsers;
   uint32_t &_generatedCharacters;
-  uint32_t &_totalAccounts;
 
 public:
   void DisplayValue()
   {
     auto seconds = millis() / 1000;
 
-    // This looks a little daft since the result is the same as ( seconds % 3 ) but
+    // This looks a little daft since the result is the same as ( seconds % 6 ) but
     // that would make it flip every second, we want whatever is displayed to remain
     // for five seconds before switching to the next.
-    int value = (seconds % 25) / 5;
+    int value = (seconds % 36) / 6;
 
     if (value < 0)
     {
       value = 0;
     }
-    else if (value > 4)
+    else if (value > 5)
     {
-      value = 4;
+      value = 5;
     }
 
     _strip.ClearTo(Black);
 
     switch (value)
     {
-    case 0:
+    case 0: // 1 v 1 matches
       for (auto i = 0; i < DIGITS; i++)
       {
-        auto digitValue = '0' + ((_oneVOneMatches + _fiveVFiveMatches + _arenaGames) / (int)(pow(10, i) + 0.5)) % 10;
+        auto digitValue = '0' + ((_oneVOneMatches) / (int)(pow(10, i) + 0.5)) % 10;
         DisplayAlphaNumberic(digitValue, i, Red, _strip);
       }
-      Serial.printf("Played games = %d", _oneVOneMatches + _fiveVFiveMatches + _arenaGames);
+      Serial.printf("One V One matches = %d", _oneVOneMatches);
       Serial.println();
       break;
-    case 1:
+    case 1: // Beat
       DisplayAlphaNumberic('b', 5, GoalsOrange, _strip);
       DisplayAlphaNumberic('t', 4, GoalsOrange, _strip);
       DisplayAlphaNumberic('1', 3, GoalsOrange, _strip);
-      DisplayAlphaNumberic('0', 2, GoalsOrange, _strip);
+      DisplayAlphaNumberic('2', 2, GoalsOrange, _strip);
       DisplayAlphaNumberic('-', 1, GoalsOrange, _strip);
-      DisplayAlphaNumberic('5', 0, GoalsOrange, _strip);
+      DisplayAlphaNumberic('3', 0, GoalsOrange, _strip);
       Serial.println("Beat Display");
       break;
-    case 2:
+    case 2: // Solo Games
       for (auto i = 0; i < DIGITS; i++)
       {
-        auto digitValue = '0' + (_generatedCharacters / (int)(pow(10, i) + 0.5)) % 10;
+        auto digitValue = '0' + (_soloGames / (int)(pow(10, i) + 0.5)) % 10;
         DisplayAlphaNumberic(digitValue, i, Purple, _strip);
       }
-      Serial.printf("Generated characters = %d", _generatedCharacters);
+      Serial.printf("Solo games = %d", _soloGames);
       Serial.println();
       break;
-    case 3:
+    case 3: // daily users
       for (auto i = 0; i < DIGITS; i++)
       {
         auto digitValue = '0' + (_dailyUsersToday / (int)(pow(10, i) + 0.5)) % 10;
@@ -327,13 +366,22 @@ public:
       Serial.printf("Users today = %d", _dailyUsersToday);
       Serial.println();
       break;
-    case 4:
+    case 4: // Currently online
       for (auto i = 0; i < DIGITS; i++)
       {
-        auto digitValue = '0' + (_totalAccounts / (int)(pow(10, i) + 0.5)) % 10;
+        auto digitValue = '0' + (_onlineUsers / (int)(pow(10, i) + 0.5)) % 10;
         DisplayAlphaNumberic(digitValue, i, Yellow, _strip);
       }
-      Serial.printf("Total accounts = %d", _totalAccounts);
+      Serial.printf("Currently online = %d", _onlineUsers);
+      Serial.println();
+      break;
+    case 5: // Total generated characters
+      for (auto i = 0; i < DIGITS; i++)
+      {
+        auto digitValue = '0' + (_generatedCharacters / (int)(pow(10, i) + 0.5)) % 10;
+        DisplayAlphaNumberic(digitValue, i, Blue, _strip);
+      }
+      Serial.printf("Total generated = %d", _generatedCharacters);
       Serial.println();
       break;
     default:
@@ -346,7 +394,7 @@ public:
     delay(UPDATE_INTERVAL_MS);
   }
 
-  CycleDisplayTask(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip, uint32_t &dailyUsersValue, uint32_t &goValue, uint32_t &ffaValue, uint32_t &arenaValue, uint32_t &charactersValue, uint32_t &totalAccountsValue)
+  CycleDisplayTask(Scheduler &scheduler, NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> &strip, uint32_t &dailyUsersValue, uint32_t &oneVOneValue, uint32_t &soloValue, uint32_t &charactersValue, uint32_t &onlineValue)
       : Task(
             TASK_IMMEDIATE,
             TASK_FOREVER,
@@ -355,11 +403,10 @@ public:
             &scheduler, false),
         _strip(strip),
         _dailyUsersToday(dailyUsersValue),
-        _oneVOneMatches(goValue),
-        _fiveVFiveMatches(ffaValue),
-        _arenaGames(arenaValue),
+        _oneVOneMatches(oneVOneValue),
+        _soloGames(soloValue),
         _generatedCharacters(charactersValue),
-        _totalAccounts(totalAccountsValue)
+        _onlineUsers(onlineValue)
   {
   }
 };
@@ -375,11 +422,11 @@ NeoPixelBus<MyPixelColorFeature, MyPixelColorMethod> PixelStrip(PIXEL_COUNT*DIGI
 Scheduler TaskScheduler;
 
 /* @brief The CounterTask instance controlling the led strip */
-CycleDisplayTask DisplayTask(TaskScheduler, PixelStrip, DailyUsersToday, OneVOneMatches, FiveVFiveMatches, ArenaGames, GeneratedCharacters, TotalAccounts);
+CycleDisplayTask DisplayTask(TaskScheduler, PixelStrip, DailyUsersToday, OneVOneMatches, SoloGames, GeneratedCharacters, OnlineUsers);
 
 // TempDummyClass DummyTask(TaskScheduler, PixelStrip);
 
-PollingTask RefreshTask(TaskScheduler, DailyUsersToday, OneVOneMatches, FiveVFiveMatches, ArenaGames, GeneratedCharacters, TotalAccounts, Timestamp);
+PollingTask RefreshTask(TaskScheduler, DailyUsersToday, OneVOneMatches, SoloGames, GeneratedCharacters, OnlineUsers, Timestamp);
 
 #pragma endregion
 
